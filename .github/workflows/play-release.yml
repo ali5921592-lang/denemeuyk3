@@ -1,0 +1,94 @@
+name: Play Store yükle
+
+# Etiket gönderdiğinde (v1.0.0 gibi) imzalı AAB üretir ve Play Console'a yükler.
+# Elle de çalıştırabilirsin: Actions → Play Store yükle → Run workflow
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Hangi kanal'
+        required: true
+        default: 'internal'
+        type: choice
+        options: [internal, alpha, beta, production]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: İmzalı AAB üret ve yükle
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Android klasörünü üret
+        run: |
+          flutter create . --platforms=android --project-name sleepify --org com.sleepify
+          git checkout -- lib pubspec.yaml
+
+      - name: Android'i hazırla
+        run: bash tool/patch_android.sh
+
+      # ---- İmzalama anahtarını sırlardan çöz ----
+      # KEYSTORE_BASE64: keystore dosyasının base64 hali
+      - name: İmza anahtarını yaz
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Gradle'a imzalamayı tanıt
+        run: python3 tool/patch_signing.py
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: Simgeyi üret
+        run: dart run flutter_launcher_icons
+
+      # Play Store AAB ister, APK değil
+      - name: İmzalı AAB derle
+        run: flutter build appbundle --release
+
+      - name: AAB'yi sakla
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleepify-aab
+          path: build/app/outputs/bundle/release/*.aab
+
+      # ---- Play Console'a yükle ----
+      # SERVICE_ACCOUNT_JSON: Google Cloud servis hesabı anahtarı (JSON)
+      # İlk sürümü Play Console'dan ELLE yüklemen gerekir; bu adım sonrakiler içindir.
+      - name: Play Console'a gönder
+        if: ${{ secrets.SERVICE_ACCOUNT_JSON != '' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+          packageName: com.sleepify.sleepify
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.track || 'internal' }}
+          status: completed
+          whatsNewDirectory: store/whatsnew
