@@ -1,0 +1,71 @@
+name: iOS derle
+
+# iOS derlemesi macOS gerektirir; GitHub'ın macOS sunucusu bu işi görür.
+# İmzasız IPA üretir: kendi cihazına Sideloadly/AltStore ile kurabilir,
+# imzalı sürüm için Apple Developer üyeliği gerekir.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: iOS (imzasız)
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Uygulama dosyasını doğrula
+        run: |
+          test -f assets/web/index.html || { echo "assets/web/index.html yok"; exit 1; }
+          echo "index.html: $(wc -c < assets/web/index.html) bayt"
+
+      - name: iOS klasörünü üret
+        run: |
+          flutter create . --platforms=ios --project-name sleepify --org com.sleepify
+          git checkout -- lib pubspec.yaml
+
+      - name: iOS'u hazırla
+        run: python3 tool/patch_ios.py
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: Simgeyi üret
+        run: dart run flutter_launcher_icons
+
+      - name: İmzasız derle
+        run: flutter build ios --release --no-codesign
+
+      # .app klasörünü Payload içine koyup zip'leyince IPA olur
+      - name: IPA paketle
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -qry Sleepify-unsigned.ipa Payload
+          echo "IPA: $(du -h Sleepify-unsigned.ipa | cut -f1)"
+
+      - name: IPA'yı yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleepify-ios-unsigned
+          path: build/ios/iphoneos/Sleepify-unsigned.ipa
+          retention-days: 30
+
+      # Simülatör derlemesi: Mac'i olanlar Xcode simülatöründe deneyebilir
+      - name: Simülatör derlemesi
+        run: flutter build ios --simulator --debug
+
+      - name: Simülatör paketini yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleepify-ios-simulator
+          path: build/ios/iphonesimulator/Runner.app
+          retention-days: 14
