@@ -1,0 +1,60 @@
+name: APK derle
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Uygulama dosyasini dogrula
+        run: |
+          test -f assets/web/index.html || { echo "assets/web/index.html yok"; exit 1; }
+          BYTES=$(wc -c < assets/web/index.html)
+          echo "index.html boyutu: $BYTES bayt"
+          test "$BYTES" -gt 100000 || { echo "Dosya beklenenden kucuk"; exit 1; }
+
+      - name: Android klasorunu uret
+        run: |
+          flutter create . --platforms=android --project-name sleepify --org com.sleepify
+          git checkout -- lib pubspec.yaml
+
+      - name: Android'i hazirla
+        run: bash tool/patch_android.sh
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: Simgeyi uret
+        run: dart run flutter_launcher_icons
+
+      - name: Release APK derle
+        run: flutter build apk --release --split-per-abi
+
+      - name: Evrensel APK derle
+        run: flutter build apk --release
+
+      - name: APK'lari yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleepify-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 60
