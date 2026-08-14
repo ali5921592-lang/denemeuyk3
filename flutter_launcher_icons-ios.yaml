@@ -1,0 +1,7 @@
+# iOS simgeleri — yalnızca iOS iş akışlarında kullanılır:
+#   dart run flutter_launcher_icons -f flutter_launcher_icons-ios.yaml
+flutter_launcher_icons:
+  android: false
+  ios: true
+  remove_alpha_ios: true          # App Store saydamlık kabul etmez
+  image_path: assets/icon/icon.png

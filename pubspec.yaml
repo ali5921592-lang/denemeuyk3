@@ -30,10 +30,11 @@ flutter:
   assets:
     - assets/web/
 
+# Android simgeleri. iOS için ayrı dosya: flutter_launcher_icons-ios.yaml
+# (Android iş akışında ios/ klasörü olmadığı için ios: false olmalı)
 flutter_launcher_icons:
   android: true
-  ios: true
-  remove_alpha_ios: true          # App Store saydamlık kabul etmez
+  ios: false
   image_path: assets/icon/icon.png
   adaptive_icon_background: "#0C0A24"
   adaptive_icon_foreground: assets/icon/foreground.png
