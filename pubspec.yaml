@@ -1,0 +1,39 @@
+name: sleepify
+description: Sleepify — akıllı alarm, uyku analizi ve rahatlama uygulaması.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.3.0     # Android WebView izin istekleri
+  webview_flutter_wkwebview: ^3.16.0  # iOS WebView izin istekleri
+  permission_handler: ^11.3.1         # kamera ve mikrofon çalışma anı izinleri
+  android_alarm_manager_plus: ^4.0.4
+  flutter_local_notifications: ^17.2.4
+  shared_preferences: ^2.3.2
+  wakelock_plus: ^1.2.8
+  timezone: ^0.9.4                    # iOS bildirim zamanlaması için
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/web/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true          # App Store saydamlık kabul etmez
+  image_path: assets/icon/icon.png
+  adaptive_icon_background: "#0C0A24"
+  adaptive_icon_foreground: assets/icon/foreground.png
