@@ -1,0 +1,117 @@
+name: TestFlight yukle
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    name: iOS App Store Connect
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: ${{ vars.BUNDLE_ID || 'com.sleepify.app' }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Xcode surumunu sabitle
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: API anahtarini yaz
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$PRIVATE_KEY" > ~/private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: iOS klasorunu uret
+        run: |
+          flutter create . --platforms=ios --project-name sleepify --org com.sleepify
+          git checkout -- lib pubspec.yaml
+
+      - name: iOS'u hazirla
+        run: python3 tool/patch_ios.py
+
+      - name: Imzalamayi yapilandir
+        run: python3 tool/patch_ios_signing.py
+
+      - name: Surum numarasini etiketten al
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ -n "$TAG" ] && [ "$TAG" != "$GITHUB_REF_NAME" ]; then
+            sed -i '' "s/^version: .*/version: ${TAG}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
+          else
+            CUR=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)
+            sed -i '' "s/^version: .*/version: ${CUR}+${GITHUB_RUN_NUMBER}/" pubspec.yaml
+          fi
+          grep '^version:' pubspec.yaml
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: Simgeyi uret
+        run: dart run flutter_launcher_icons
+
+      - name: Pod kur
+        run: cd ios && pod install --repo-update
+
+      - name: Flutter tarafini derle
+        run: flutter build ios --release --no-codesign
+
+      - name: Arsivle
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          cd ios
+          xcodebuild archive \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$TEAM_ID"
+
+      - name: IPA cikar
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+          ls -lh "$RUNNER_TEMP/ipa"
+
+      - name: App Store Connect'e yukle
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          IPA=$(ls "$RUNNER_TEMP/ipa"/*.ipa | head -1)
+          xcrun altool --upload-app --type ios --file "$IPA" \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+
+      - name: IPA'yi sakla
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sleepify-ios-signed
+          path: ${{ runner.temp }}/ipa/*.ipa
